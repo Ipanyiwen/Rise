@@ -15,6 +15,8 @@ public class Connector implements LifeCycle {
 
     private int proxyPort;
 
+    private int port;
+
     public Connector() throws UnknownHostException {
         protocolHandler = new HttpProtocolHandler(this);
         scheme = "http";
@@ -65,5 +67,13 @@ public class Connector implements LifeCycle {
 
     public void setProxyPort(int proxyPort) {
         this.proxyPort = proxyPort;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public void setPort(int port) {
+        this.port = port;
     }
 }

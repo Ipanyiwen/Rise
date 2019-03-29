@@ -17,10 +17,23 @@ import java.util.TreeMap;
 
 public class SocketProcessor implements Processor, Runnable {
 
+    private static final String match =
+            ";" + Constants.SESSION_PARAMETER_NAME + "=";
+
+    private boolean keepAlive = false;
+
+    private boolean http11 = true;
+
+    private boolean sendAck = false;
+
+    private static final byte[] ack =
+            (new String("HTTP/1.1 100 Continue\r\n\r\n")).getBytes();
+
     private Socket socket;
     private Request request;
     private Response response;
     private Connector connector;
+    private HttpRequestLine requestLine = new HttpRequestLine();
 
     private StringParser parser = new StringParser();
 
@@ -57,15 +70,120 @@ public class SocketProcessor implements Processor, Runnable {
         SocketInputStream in = new SocketInputStream(inputStream, Constants.bufferSize);
         request = new Request(in);
         response = new Response(outputStream);
-
+        parseConnection();
+        parseRequest(in, outputStream);
         parseHeaders(in);
+        if (http11) {
+            ackRequest(outputStream);
+        }
+
     }
+
+    private void parseConnection() {
+        if (connector.getProxyPort() != 0) {
+            request.setServerPort(connector.getProxyPort());
+        }
+        else {
+            request.setServerPort(connector.getPort());
+        }
+    }
+
+    private void parseRequest(SocketInputStream input, OutputStream outputStream) throws IOException, ServletException {
+        // Parse the incoming request line
+        input.readRequestLine(requestLine);
+        String method = new String(requestLine.method, 0, requestLine.methodEnd);
+        String uri = null;
+        String protocol = new String(requestLine.protocol, 0, requestLine.protocolEnd);
+
+        if (protocol.length() == 0) {
+            protocol = "HTTP/0.9";
+        }
+
+        if ( protocol.equals("HTTP/1.1") ) {
+            http11 = true;
+            sendAck = false;
+        } else {
+            http11 = false;
+            sendAck = false;
+            // For HTTP/1.0, connection are not persistent by default,
+            // unless specified with a Connection: Keep-Alive header.
+            keepAlive = false;
+        }
+
+
+        // Validate the incoming request line
+        if (method.length() < 1) {
+            throw new ServletException("httpProcessor.parseRequest.method");
+        } else if (requestLine.uriEnd < 1) {
+            throw new ServletException("httpProcessor.parseRequest.uri");
+        }
+
+        // Parse any query parameters out of the request URI
+        int question = requestLine.indexOf("?");
+        if (question >= 0) {
+            request.setQueryString(new String(requestLine.uri, question + 1, requestLine.uriEnd - question - 1));
+            uri = new String(requestLine.uri, 0, question);
+        } else {
+            request.setQueryString(null);
+            uri = new String(requestLine.uri, 0, requestLine.uriEnd);
+        }
+
+        // Checking for an absolute URI (with the HTTP protocol)
+        if (!uri.startsWith("/")) {
+            int pos = uri.indexOf("://");
+            // Parsing out protocol and host name
+            if (pos != -1) {
+                pos = uri.indexOf('/', pos + 3);
+                if (pos == -1) {
+                    uri = "";
+                } else {
+                    uri = uri.substring(pos);
+                }
+            }
+        }
+
+        // Parse any requested session ID out of the request URI
+        int semicolon = uri.indexOf(match);
+        if (semicolon >= 0) {
+            String rest = uri.substring(semicolon + match.length());
+            int semicolon2 = rest.indexOf(';');
+            if (semicolon2 >= 0) {
+                request.setRequestedSessionId(rest.substring(0, semicolon2));
+                rest = rest.substring(semicolon2);
+            } else {
+                request.setRequestedSessionId(rest);
+                rest = "";
+            }
+            uri = uri.substring(0, semicolon) + rest;
+        } else {
+            request.setRequestedSessionId(null);
+        }
+
+        // Normalize URI (using String operations at the moment)
+        String normalizedUri = normalize(uri);
+
+        // Set the corresponding request properties
+        request.setMethod(method);
+        request.setProtocol(protocol);
+        if (normalizedUri != null) {
+            request.setRequestURI(normalizedUri);
+        } else {
+            request.setRequestURI(uri);
+        }
+//        request.setSecure(connector.getSecure());
+        request.setScheme(connector.getScheme());
+
+        if (normalizedUri == null) {
+            throw new ServletException("Invalid URI: " + uri + "'");
+        }
+    }
+
     private void parseHeaders(SocketInputStream input)
             throws IOException, ServletException {
 
         while (true) {
 
-            HttpHeader header = request.getHeader();
+            HttpHeader header = new HttpHeader();
 
             input.readHeader(header);
             if (header.nameEnd == 0) {
@@ -77,7 +195,8 @@ public class SocketProcessor implements Processor, Runnable {
             }
 
             String value = new String(header.value, 0, header.valueEnd);
-
+            String key = new String(header.name).substring(0, header.nameEnd);
+            request.addHeader(key, value);
             if (header.equals(DefaultHeaders.AUTHORIZATION_NAME)) {
 //                request.setAuthorization(value); TODO
             } else if (header.equals(DefaultHeaders.ACCEPT_LANGUAGE_NAME)) {
@@ -103,9 +222,7 @@ public class SocketProcessor implements Processor, Runnable {
                 try {
                     n = Integer.parseInt(value);
                 } catch (Exception e) {
-                    throw new ServletException
-                            (
-                                    ("httpProcessor.parseHeaders.contentLength"));
+                    throw new ServletException("httpProcessor.parseHeaders.contentLength");
                 }
                 request.setContentLength(n);
             } else if (header.equals(DefaultHeaders.CONTENT_TYPE_NAME)) {
@@ -143,29 +260,26 @@ public class SocketProcessor implements Processor, Runnable {
                 }
             }
 
-//            else if (header.equals(DefaultHeaders.CONNECTION_NAME)) {
-//                if (header.valueEquals
-//                        (DefaultHeaders.CONNECTION_CLOSE_VALUE)) {
-//                    keepAlive = false;
-//                    response.setHeader("Connection", "close");
-//                }
-//                //request.setConnection(header);
-//                /*
-//                  if ("keep-alive".equalsIgnoreCase(value)) {
-//                  keepAlive = true;
-//                  }
-//                */
-//            } else if (header.equals(DefaultHeaders.EXPECT_NAME)) {
-//                if (header.valueEquals(DefaultHeaders.EXPECT_100_VALUE))
-//                    sendAck = true;
-//                else
-//                    throw new ServletException("httpProcessor.parseHeaders.unknownExpectation");
-//            } else if (header.equals(DefaultHeaders.TRANSFER_ENCODING_NAME)) {
-//                //request.setTransferEncoding(header);
-//            }
-
-//            request.nextHeader();
-
+            else if (header.equals(DefaultHeaders.CONNECTION_NAME)) {
+                if (header.valueEquals
+                        (DefaultHeaders.CONNECTION_CLOSE_VALUE)) {
+                    keepAlive = false;
+                    response.setHeader("Connection", "close");
+                }
+                //request.setConnection(header);
+                /*
+                  if ("keep-alive".equalsIgnoreCase(value)) {
+                  keepAlive = true;
+                  }
+                */
+            } else if (header.equals(DefaultHeaders.EXPECT_NAME)) {
+                if (header.valueEquals(DefaultHeaders.EXPECT_100_VALUE))
+                    sendAck = true;
+                else
+                    throw new ServletException("httpProcessor.parseHeaders.unknownExpectation");
+            } else if (header.equals(DefaultHeaders.TRANSFER_ENCODING_NAME)) {
+                //request.setTransferEncoding(header)
+            }
         }
 
     }
@@ -258,8 +372,6 @@ public class SocketProcessor implements Processor, Runnable {
 
         }
 
-        // Process the quality values in highest->lowest order (due to
-        // negating the Double value when creating the key)
         Iterator keys = locales.keySet().iterator();
         while (keys.hasNext()) {
             Double key = (Double) keys.next();
@@ -274,7 +386,85 @@ public class SocketProcessor implements Processor, Runnable {
 
     }
 
+    protected String normalize(String path) {
+
+        if (path == null)
+            return null;
+
+        // Create a place for the normalized path
+        String normalized = path;
+
+        // Normalize "/%7E" and "/%7e" at the beginning to "/~"
+        if (normalized.startsWith("/%7E") ||
+                normalized.startsWith("/%7e"))
+            normalized = "/~" + normalized.substring(4);
+
+        // Prevent encoding '%', '/', '.' and '\', which are special reserved
+        // characters
+        if ((normalized.indexOf("%25") >= 0)
+                || (normalized.indexOf("%2F") >= 0)
+                || (normalized.indexOf("%2E") >= 0)
+                || (normalized.indexOf("%5C") >= 0)
+                || (normalized.indexOf("%2f") >= 0)
+                || (normalized.indexOf("%2e") >= 0)
+                || (normalized.indexOf("%5c") >= 0)) {
+            return null;
+        }
+
+        if (normalized.equals("/."))
+            return "/";
+
+        // Normalize the slashes and add leading slash if necessary
+        if (normalized.indexOf('\\') >= 0)
+            normalized = normalized.replace('\\', '/');
+        if (!normalized.startsWith("/"))
+            normalized = "/" + normalized;
+
+        // Resolve occurrences of "//" in the normalized path
+        while (true) {
+            int index = normalized.indexOf("//");
+            if (index < 0)
+                break;
+            normalized = normalized.substring(0, index) +
+                    normalized.substring(index + 1);
+        }
+
+        // Resolve occurrences of "/./" in the normalized path
+        while (true) {
+            int index = normalized.indexOf("/./");
+            if (index < 0)
+                break;
+            normalized = normalized.substring(0, index) +
+                    normalized.substring(index + 2);
+        }
+
+        // Resolve occurrences of "/../" in the normalized path
+        while (true) {
+            int index = normalized.indexOf("/../");
+            if (index < 0)
+                break;
+            if (index == 0)
+                return (null);  // Trying to go outside our context
+            int index2 = normalized.lastIndexOf('/', index - 1);
+            normalized = normalized.substring(0, index2) +
+                    normalized.substring(index + 3);
+        }
+
+        // Declare occurrences of "/..." (three or more dots) to be invalid
+        // (on some Windows platforms this walks the directory tree!!!)
+        if (normalized.indexOf("/...") >= 0)
+            return (null);
+
+        // Return the normalized path that we have completed
+        return (normalized);
+
+    }
 
 
+    private void ackRequest(OutputStream output)
+            throws IOException {
+        if (sendAck)
+            output.write(ack);
+    }
 
 }
