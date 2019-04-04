@@ -1,10 +1,13 @@
 package connector;
 
+import core.Mapper;
+import core.Service;
 import util.RequestUtil;
 import util.StringParser;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -26,8 +29,28 @@ public class SocketProcessor implements Processor, Runnable {
 
     private boolean sendAck = false;
 
-    private static final byte[] ack =
-            (new String("HTTP/1.1 100 Continue\r\n\r\n")).getBytes();
+    private static boolean ok = true;
+
+    private static final byte[] ack = (new String("HTTP/1.1 100 Continue\r\n\r\n")).getBytes();
+
+    private static final byte[] NotFound404 = (new String("HTTP/1.1 404 Not Found\r\n" +
+            "Connection: keep-alive\r\n" +
+            "Content-Encoding: utf-8\r\n" +
+            "Content-Type: text/html; charset=utf8,gbk\r\n" +
+            "Server: Rise/1.0.0 \r\n\r\n" +
+            "<html>" +
+            "<head><title>404 Not Found</title></head>" +
+            "<body bgcolor=\"white\">" +
+            "<center><h1>404 Not Found</h1></center>" +
+            "<hr><center>Rise/1.0.0</center>" +
+            "</body>" +
+            "</html>")).getBytes();
+
+    private static final String OKMSG = new String("HTTP/1.1 200 OK\r\n" +
+            "Connection: keep-alive\r\n" +
+            "Content-Encoding: utf-8\r\n" +
+            "Content-Type: text/html; charset=utf8,gbk\r\n" +
+            "Server: Rise/1.0.0 \r\n\r\n");
 
     private Socket socket;
     private Request request;
@@ -50,31 +73,54 @@ public class SocketProcessor implements Processor, Runnable {
         if (socket != null) {
             try {
                 process();
-            } catch (IOException e) {
-                e.printStackTrace();
             } catch (ServletException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
                 e.printStackTrace();
             }
         }
     }
 
     @Override
-    public void process() throws IOException, ServletException {
-        parseSocket();
+    public void process() throws ServletException, IOException {
+        try {
+            parseSocket();
+            if (ok) {
+                Service service = Mapper.getService(request.getRequestURI());
+                if (service == null) {
+                    response.getOutputStream().write(NotFound404);
+                    response.finishResponse();
+                } else {
+                    response.getWriter().write(OKMSG);
+                    service.invoke(request, response);
+                }
+                socket.close();
+            }
+        } catch (Exception e) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            throw e;
+        }
 
     }
 
     private void parseSocket() throws IOException, ServletException {
-        InputStream inputStream = socket.getInputStream();
-        OutputStream outputStream = socket.getOutputStream();
-        SocketInputStream in = new SocketInputStream(inputStream, Constants.bufferSize);
-        request = new Request(in);
-        response = new Response(outputStream);
-        parseConnection();
-        parseRequest(in, outputStream);
-        parseHeaders(in);
-        if (http11) {
-            ackRequest(outputStream);
+        try {
+
+            InputStream inputStream = socket.getInputStream();
+            OutputStream outputStream = socket.getOutputStream();
+            SocketInputStream in = new SocketInputStream(inputStream, Constants.bufferSize);
+            request = new Request(in);
+            response = new Response();
+            response.setStream(outputStream);
+            parseConnection();
+            parseRequest(in, outputStream);
+            parseHeaders(in);
+            if (http11) {
+                ackRequest(outputStream);
+            }
+        } catch (Exception e) {
+            ok = false;
+            throw e;
         }
 
     }
@@ -105,13 +151,9 @@ public class SocketProcessor implements Processor, Runnable {
         } else {
             http11 = false;
             sendAck = false;
-            // For HTTP/1.0, connection are not persistent by default,
-            // unless specified with a Connection: Keep-Alive header.
             keepAlive = false;
         }
 
-
-        // Validate the incoming request line
         if (method.length() < 1) {
             throw new ServletException("httpProcessor.parseRequest.method");
         } else if (requestLine.uriEnd < 1) {

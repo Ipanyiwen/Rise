@@ -1,56 +1,64 @@
 package core;
 
-import connector.Connector;
 
+import com.sun.xml.internal.ws.util.StringUtils;
+import connector.Request;
+import connector.Response;
+
+import javax.servlet.Servlet;
+import javax.servlet.ServletException;
 import java.io.IOException;
+import java.io.File;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.net.URLStreamHandler;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class StandService implements Service{
 
-    private List<Connector> connectors = new ArrayList<>();
-
-    private Container container;
+    private List<Container> containers = new ArrayList<>();
 
     private Server server;
 
+    private String name;
+
+    private Map<String, Servlet> servletMap = new HashMap<>();
+
+
+
+    public StandService(String name) {
+        this.name = name;
+        init();
+
+    }
+
+    public void init() {
+        String path = Constants.WEB_ROOT + File.separator + name;
+        findServlets(new File(path));
+    }
+
     @Override
     public void start() throws IOException {
-        if (container != null) {
+        for (Container container : containers) {
             container.start();
         }
-
-        for (Connector connector : connectors) {
-            connector.start();
-        }
-
     }
 
     @Override
     public void stop() {
-        if (container != null) {
+        for (Container container : containers) {
             container.stop();
         }
 
-        for (Connector connector : connectors) {
-            connector.stop();
-        }
-
     }
 
     @Override
-    public void addConnector(Connector connector) throws IOException {
-        if (connector != null) {
-            connectors.add(connector);
-            connector.start();
-        }
-    }
-
-    @Override
-    public void setContainer(Container container) throws IOException {
+    public void addContainer(Container container) throws IOException {
         if (container != null) {
-            this.container.stop();
-            this.container = container;
+            containers.add(container);
             container.start();
         }
     }
@@ -58,5 +66,94 @@ public class StandService implements Service{
     @Override
     public Server getServer() {
         return server;
+    }
+
+    @Override
+    public void setServer(Server server) {
+        this.server = server;
+    }
+
+    @Override
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    private void findServlets(File file) {
+        // 解析xml
+        for (File f : file.listFiles()) {
+            if (f.isFile()) {
+                loadClass(f.getPath());
+            } else {
+                findServlets(f);
+            }
+        }
+    }
+
+    @Override
+    public void invoke(Request request, Response response) {
+        String uri = request.getRequestURI();
+        String key = uri.substring(name.length() + (uri.startsWith("/") ? 2 : 1), uri.length());
+        key = key.replaceAll(File.separator, ".");
+
+        System.out.println(key);
+        if (servletMap.containsKey(key)) {
+            try {
+                servletMap.get(key).service(request, response);
+            } catch (ServletException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            System.out.println(uri);
+            try {
+                response.sendError(404);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+
+    }
+
+    private void loadClass(String filePath) {
+        String path = Constants.WEB_ROOT + File.separator + name;
+        filePath = filePath.substring(path.length(), filePath.length());
+        filePath = filePath.replaceAll(File.separator, ".");
+        String servletName = filePath.substring(0, filePath.lastIndexOf("."));
+        System.out.println(servletName);
+        URLClassLoader loader = null;
+        try {
+            // create a URLClassLoader
+            URL[] urls = new URL[1];
+            URLStreamHandler streamHandler = null;
+            File classPath = new File(Constants.WEB_ROOT+File.separator + name);
+            String repository = (new URL("file", null, classPath.getCanonicalPath() + File.separator)).toString() ;
+            urls[0] = new URL(null, repository, streamHandler);
+            loader = new URLClassLoader(urls);
+        }
+        catch (IOException e) {
+            System.out.println(e.toString());
+        }
+        Class myClass = null;
+        try {
+            myClass = loader.loadClass(servletName);
+            Servlet servlet = (Servlet) myClass.newInstance();
+            servletMap.put(servletName, servlet);
+        }
+        catch (ClassNotFoundException e) {
+            System.out.println(e.getStackTrace());
+        } catch (IllegalAccessException e) {
+            System.out.println(e.getStackTrace());
+        } catch (InstantiationException e) {
+            System.out.println(e.getStackTrace());
+        }
+
+
     }
 }

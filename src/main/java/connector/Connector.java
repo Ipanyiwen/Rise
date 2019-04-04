@@ -1,7 +1,6 @@
 package connector;
 
-import core.LifeCycle;
-
+import core.*;
 import java.io.IOException;
 import java.net.UnknownHostException;
 
@@ -16,6 +15,10 @@ public class Connector implements LifeCycle {
     private int proxyPort;
 
     private int port;
+
+    private Container container;
+
+    private Server server;
 
     public Connector() throws UnknownHostException {
         protocolHandler = new HttpProtocolHandler(this);
@@ -75,5 +78,21 @@ public class Connector implements LifeCycle {
 
     public void setPort(int port) {
         this.port = port;
+    }
+
+    public Container getContainer() {
+        return container;
+    }
+
+    public void setContainer(Container container) {
+        this.container = container;
+    }
+
+    public Server getServer() {
+        return server;
+    }
+
+    public void setServer(Server server) {
+        this.server = server;
     }
 }

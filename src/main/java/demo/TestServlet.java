@@ -1,5 +1,6 @@
 package demo;
 
+
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -7,7 +8,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 
-public class DemoServlet extends HttpServlet {
+public class TestServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         System.out.println("-----------------------");
@@ -15,10 +16,10 @@ public class DemoServlet extends HttpServlet {
         PrintWriter var3 = resp.getWriter();
         var3.println("<html>");
         var3.println("<head>");
-        var3.println("<title>Demo Servlet</title>");
+        var3.println("<title>Test Servlet</title>");
         var3.println("</head>");
         var3.println("<body>");
-        var3.println("<h2>Hello Demo</h2");
+        var3.println("<h2>Hello Test</h2");
 //        Enumeration var4 = req.getHeaderNames();
 //
 //        while(var4.hasMoreElements()) {
@@ -44,6 +45,4 @@ public class DemoServlet extends HttpServlet {
         var3.println("</html>");
         var3.flush();
     }
-
-    
 }
