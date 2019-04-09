@@ -1,7 +1,6 @@
 package core;
 
 
-import com.sun.xml.internal.ws.util.StringUtils;
 import connector.Request;
 import connector.Response;
 
@@ -25,7 +24,7 @@ public class StandService implements Service{
 
     private String name;
 
-    private Map<String, Servlet> servletMap = new HashMap<>();
+    private Map<String, Container> servletMap = new HashMap<>();
 
 
 
@@ -103,7 +102,7 @@ public class StandService implements Service{
         System.out.println(key);
         if (servletMap.containsKey(key)) {
             try {
-                servletMap.get(key).service(request, response);
+                servletMap.get(key).invoke(request, response);
             } catch (ServletException e) {
                 e.printStackTrace();
             } catch (IOException e) {
@@ -112,7 +111,21 @@ public class StandService implements Service{
         } else {
             System.out.println(uri);
             try {
-                response.sendError(404);
+                String NotFound404 = new String("HTTP/1.1 404 Not Found\r\n" +
+                        "Connection: keep-alive\r\n" +
+                        "Content-Encoding: utf-8\r\n" +
+                        "Content-Type: text/html; charset=utf8,gbk\r\n" +
+                        "Server: Rise/1.0.0 \r\n\r\n" +
+                        "<html>" +
+                        "<head><title>404 Not Found</title></head>" +
+                        "<body bgcolor=\"white\">" +
+                        "<center><h1>404 Not Found</h1></center>" +
+                        "<hr><center>Rise/1.0.0</center>" +
+                        "</body>" +
+                        "</html>");
+                response.getWriter().write(NotFound404);
+                response.getWriter().flush();
+//                response.sendError(404);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -144,7 +157,8 @@ public class StandService implements Service{
         try {
             myClass = loader.loadClass(servletName);
             Servlet servlet = (Servlet) myClass.newInstance();
-            servletMap.put(servletName, servlet);
+            ServletContainer container = new ServletContainer(servlet);
+            servletMap.put(servletName, container);
         }
         catch (ClassNotFoundException e) {
             System.out.println(e.getStackTrace());

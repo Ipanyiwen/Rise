@@ -4,21 +4,10 @@ import javax.servlet.http.*;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 
 public class Response extends ResponseBase {
-
-    protected String message = getStatusMessage(HttpServletResponse.SC_OK);
-
-    protected String characterEncoding = null;
-
-    protected int status = HttpServletResponse.SC_OK;
-
-    protected final SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz",Locale.US);
-
-
 
     @Override
     public void addCookie(Cookie cookie) {
@@ -173,6 +162,29 @@ public class Response extends ResponseBase {
 
         // Cause the response to be finished (from the application perspective)
         setSuspended(true);
+        StringBuilder res = new StringBuilder();
+        String msg = status + " " + getStatusMessage(status);
+        msg =  "<html>" +
+                "<head><title>"+msg+"</title></head>" +
+                "<body bgcolor=\"white\">" +
+                "<center><h1>"+msg+"</h1></center>" +
+                "<hr><center>Rise/1.0.0</center>" +
+                "</body>" +
+                "</html>";
+
+
+        res.append(protocol).append(" ").append(status).append(" ").append(getStatusMessage(status)).append("\r\n");
+        headers.put("content-type", "text/html; charset=utf-8");
+        headers.put("content-length", msg.getBytes().length);
+        for (Object key : headers.keySet()) {
+            Object v = headers.get(key);
+            res.append(key).append(": ").append(v).append("\r\n");
+        }
+
+        res.append("\r\n");
+        res.append(msg);
+        getWriter().write(res.toString());
+
     }
 
     @Override
@@ -391,98 +403,4 @@ public class Response extends ResponseBase {
         this.contentLength = l;
     }
 
-    protected String getStatusMessage(int status) {
-
-        switch (status) {
-            case SC_OK:
-                return ("OK");
-            case SC_ACCEPTED:
-                return ("Accepted");
-            case SC_BAD_GATEWAY:
-                return ("Bad Gateway");
-            case SC_BAD_REQUEST:
-                return ("Bad Request");
-            case SC_CONFLICT:
-                return ("Conflict");
-            case SC_CONTINUE:
-                return ("Continue");
-            case SC_CREATED:
-                return ("Created");
-            case SC_EXPECTATION_FAILED:
-                return ("Expectation Failed");
-            case SC_FORBIDDEN:
-                return ("Forbidden");
-            case SC_GATEWAY_TIMEOUT:
-                return ("Gateway Timeout");
-            case SC_GONE:
-                return ("Gone");
-            case SC_HTTP_VERSION_NOT_SUPPORTED:
-                return ("HTTP Version Not Supported");
-            case SC_INTERNAL_SERVER_ERROR:
-                return ("Internal Server Error");
-            case SC_LENGTH_REQUIRED:
-                return ("Length Required");
-            case SC_METHOD_NOT_ALLOWED:
-                return ("Method Not Allowed");
-            case SC_MOVED_PERMANENTLY:
-                return ("Moved Permanently");
-            case SC_MOVED_TEMPORARILY:
-                return ("Moved Temporarily");
-            case SC_MULTIPLE_CHOICES:
-                return ("Multiple Choices");
-            case SC_NO_CONTENT:
-                return ("No Content");
-            case SC_NON_AUTHORITATIVE_INFORMATION:
-                return ("Non-Authoritative Information");
-            case SC_NOT_ACCEPTABLE:
-                return ("Not Acceptable");
-            case SC_NOT_FOUND:
-                return ("Not Found");
-            case SC_NOT_IMPLEMENTED:
-                return ("Not Implemented");
-            case SC_NOT_MODIFIED:
-                return ("Not Modified");
-            case SC_PARTIAL_CONTENT:
-                return ("Partial Content");
-            case SC_PAYMENT_REQUIRED:
-                return ("Payment Required");
-            case SC_PRECONDITION_FAILED:
-                return ("Precondition Failed");
-            case SC_PROXY_AUTHENTICATION_REQUIRED:
-                return ("Proxy Authentication Required");
-            case SC_REQUEST_ENTITY_TOO_LARGE:
-                return ("Request Entity Too Large");
-            case SC_REQUEST_TIMEOUT:
-                return ("Request Timeout");
-            case SC_REQUEST_URI_TOO_LONG:
-                return ("Request URI Too Long");
-            case SC_REQUESTED_RANGE_NOT_SATISFIABLE:
-                return ("Requested Range Not Satisfiable");
-            case SC_RESET_CONTENT:
-                return ("Reset Content");
-            case SC_SEE_OTHER:
-                return ("See Other");
-            case SC_SERVICE_UNAVAILABLE:
-                return ("Service Unavailable");
-            case SC_SWITCHING_PROTOCOLS:
-                return ("Switching Protocols");
-            case SC_UNAUTHORIZED:
-                return ("Unauthorized");
-            case SC_UNSUPPORTED_MEDIA_TYPE:
-                return ("Unsupported Media Type");
-            case SC_USE_PROXY:
-                return ("Use Proxy");
-            case 207:       // WebDAV
-                return ("Multi-Status");
-            case 422:       // WebDAV
-                return ("Unprocessable Entity");
-            case 423:       // WebDAV
-                return ("Locked");
-            case 507:       // WebDAV
-                return ("Insufficient Storage");
-            default:
-                return ("HTTP Response Status " + status);
-        }
-
-    }
 }

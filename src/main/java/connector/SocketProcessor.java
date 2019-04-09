@@ -91,7 +91,6 @@ public class SocketProcessor implements Processor, Runnable {
                     response.getOutputStream().write(NotFound404);
                     response.finishResponse();
                 } else {
-                    response.getWriter().write(OKMSG);
                     service.invoke(request, response);
                 }
                 socket.close();
